@@ -6,7 +6,7 @@ date: "2026-01-27"
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(
-	echo = TRUE,
+	echo = FALSE,
 	message = FALSE,
 	warning = FALSE,
 	fig.width = 5,
@@ -59,7 +59,9 @@ DATA:
 
 • AUC data:'/data/AUC_metadata_JAN2026.xlsx'
 
-## Data
+
+## Data {.tabset}
+
 Taking a quick look at both the RNA-seq data and AUC data 
 
 RNA-seq data:
@@ -70,20 +72,32 @@ head(rawdata[,subset] )
 ```
 
 Relevant metadata:
+
+### relAUC values
 ```{r}
-metadata <- read_excel("/Users/dalvinikita/Documents/7_GitHub/drug-AUC-analysis/data/AUC_metadata_JAN2026.xlsx", sheet = 'discrete')
-metadata <- metadata[-c(5,14,15),]
-create_dt(metadata)
+metadata_continuous <- read_excel("/Users/dalvinikita/Documents/7_GitHub/drug-AUC-analysis/data/AUC_metadata_JAN2026.xlsx", sheet = 'continuous')
+metadata_continuous <- metadata_continuous[-c(5,14,15),]
+create_dt(metadata_continuous)
 ```
 
-*Note: We have removed ORG76 from the AUC metadata as there is no corresponding RNAseq, and for organoids with AUC data for 1 dose AND 2 dose experimental methods, we keep data only from the 1 dose regimen for a more balanced dataset.*
-
-## QC and Normalisation
-
-### Design 
-Taking a look at the design matrix which includes growth pattern and batch of sequencing:
+### Sensitivity Class
 
 ```{r}
+metadata_discrete <- read_excel("/Users/dalvinikita/Documents/7_GitHub/drug-AUC-analysis/data/AUC_metadata_JAN2026.xlsx", sheet = 'discrete')
+metadata_discrete <- metadata_discrete[-c(5,14,15),]
+create_dt(metadata_discrete)
+```
+
+
+## Method 1: Correlative Analysis 
+
+For the correlative analysis, we use the relAUC values for each drug to create a design matrix and fit a GLM to our gene expression data, to identify genes related to differences in relAUC for a particular drug. 
+
+### Design 
+Taking a look at the design matrix which includes growth pattern, batch of sequencing, and dose:
+
+```{r}
+
 ### creating a DGElist object to include organoids with AUC data
 organoids <- c('ORG-38-ORG','ORG41','ORG-46-ORG','ORG49','ORG55','ORG60','ORG61','ORG64_new','ORG65','ORG66','ORG70','ORG73')
 y<- DGEList(counts=rawdata[,organoids], genes=rawdata[,1])
@@ -92,23 +106,25 @@ y<- DGEList(counts=rawdata[,organoids], genes=rawdata[,1])
 colnames(y) <- c('ORG38-O','ORG41','ORG46-O','ORG49','ORG55','ORG60','ORG61','ORG64','ORG65','ORG66','ORG70','ORG73')
 
 ### tidying up metadata sample names to match counts matrix]
-metadata$PATIENT <- c('ORG38-O','ORG41','ORG46-O','ORG49','ORG55','ORG60','ORG61','ORG64','ORG65','ORG66','ORG70','ORG73')
-rownames(metadata) <- metadata$PATIENT
+metadata_continuous$PATIENT <- c('ORG38-O','ORG41','ORG46-O','ORG49','ORG55','ORG60','ORG61','ORG64','ORG65','ORG66','ORG70','ORG73')
+rownames(metadata_continuous) <- metadata_continuous$PATIENT
 
 ### creating factors to add into design matrix
-### including pattern and batch
-pattern <- as.factor(metadata$PATTERN)
-batch <- as.factor(metadata$BATCH)
-dose <- as.factor(metadata$DOSE)
-response <- as.factor(metadata$Mitomycin)
+### including pattern, batch, and dose
+pattern <- as.factor(metadata_continuous$PATTERN)
+batch <- as.factor(metadata_continuous$BATCH)
+dose <- as.factor(metadata_continuous$DOSE)
 
-#create design matrix to include batch, growth pattern
-design <- model.matrix(~0+response+pattern+batch+dose)
-rownames(design) <- metadata$PATIENT
+#create design matrix to include batch, growth pattern, and dose
+design <- model.matrix(~0+pattern+batch+dose)
+rownames(design) <- metadata_continuous$PATIENT
 create_dt(design)
 ```
+
 ### Normalisation
+
 Filtering to remove genes with low counts:
+
 ```{r, fig.width=7}
 #filtering to remove low counts
 keep <- filterByExpr(y, design)
@@ -130,10 +146,11 @@ title(main="B. Example: Normalised data",ylab="Log-cpm")
 ```
 
 ### MDS plots {.tabset}
+
 ```{r, echo=FALSE}
-col.pattern <- c('darkorchid3', 'deeppink')[as.factor(metadata$PATTERN)]
-col.batch <- c('darkorchid3', 'deeppink', 'orange')[as.factor(metadata$BATCH)]
-col.dose <- c('darkorchid3', 'deeppink')[as.factor(metadata$DOSE)]
+col.pattern <- c('darkorchid3', 'deeppink')[as.factor(metadata_continuous$PATTERN)]
+col.batch <- c('darkorchid3', 'deeppink', 'orange')[as.factor(metadata_continuous$BATCH)]
+col.dose <- c('darkorchid3', 'deeppink')[as.factor(metadata_continuous$DOSE)]
 ```
 
 #### Label
@@ -143,19 +160,19 @@ plotMDS(y, col=col.pattern)
 title(main="A. Growth Pattern")
 legend("topleft",
        fill=c('darkorchid3', 'deeppink'), 
-       legend=levels(as.factor(metadata$PATTERN)))
+       legend=levels(as.factor(metadata_continuous$PATTERN)))
 
 plotMDS(y, col=col.batch)
 title(main="B. Batch")
 legend("topleft",
        fill=c('darkorchid3', 'deeppink','orange'), 
-       legend=levels(as.factor(metadata$BATCH)))
+       legend=levels(as.factor(metadata_continuous$BATCH)))
 
 plotMDS(y, col=col.dose)
 title(main="C. DOSE")
 legend("topleft",
        fill=c('darkorchid3', 'deeppink'), 
-       legend=levels(as.factor(metadata$DOSE)))
+       legend=levels(as.factor(metadata_continuous$DOSE)))
 
 ```
 
@@ -166,27 +183,431 @@ plotMDS(y, col=col.pattern, pch=19)
 title(main="A. Growth Pattern")
 legend("topleft",
        fill=c('darkorchid3', 'deeppink'),
-       legend=levels(as.factor(metadata$PATTERN)))
+       legend=levels(as.factor(metadata_continuous$PATTERN)))
 
 plotMDS(y, col=col.batch, pch=19)
 title(main="B. Batch")
 legend("topleft",
        fill=c('darkorchid3', 'deeppink','orange'),
-       legend=levels(as.factor(metadata$BATCH)))
+       legend=levels(as.factor(metadata_continuous$BATCH)))
 
 plotMDS(y, col=col.dose, pch = 19)
 title(main="C. DOSE")
 legend("topleft",
        fill=c('darkorchid3', 'deeppink'), 
-       legend=levels(as.factor(metadata$DOSE)))
+       legend=levels(as.factor(metadata_continuous$DOSE)))
 ```
 
-## Differential Expression 
+### Analysis {.tabset}
+
+In this approach, we run 7 separate analyses (for  drugs except Staurosporine, 5FU, Carboplatin, Cisplatin, and Oxaliplatin - which do not show sufficient variation in response) to identify genes associated with changes in AUC values for the respective drug, across our 12 organoid lines. Design matrices for all analysis will include: 
+
+• Growth pattern (INF/EXP)
+
+• Batch of sequencing (1,2,3)
+
+• AUC values for respective drug as a numeric/ continuous variable. 
+
+• Doses of drug received (1 or 2)
+
+#### Docetaxel
+
+Design matrix used for analysis:
+
+```{r}
+counts <- y
+auc <- as.numeric(metadata_continuous$Docetaxel)
+auc_design <- cbind(design,auc)
+create_dt(auc_design)
+```
+
+Top genes related to Docetaxel AUC: 
+
+```{r}
+counts <- counts %>%
+  estimateDisp() %>%
+  estimateCommonDisp() %>%
+  estimateTagwiseDisp()
+
+fit <- glmQLFit(counts, design = auc_design, robust = TRUE)
+auc_fit <- glmQLFTest(fit, coef=c('auc'))
+genes <- topTags(auc_fit, n=Inf)
+create_dt(as.data.frame(genes))
+```
+*Notes: 0 genes found to have FDR < 0.05*
+
+Plotting top genes: 
+
+```{r}
+top_genes <- c(genes$table$genes)
+top_genes <- top_genes[1:5]
+auc_values <- auc
+
+for (gene in top_genes) {
+  gene <- as.character(gene)
+  y$cpm <- cpm(y, log = T) 
+  expression_values <- y$cpm[y$genes$genes==gene,]
+  plot<- ggplot(data = NULL, mapping = aes(x=auc, y=expression_values, colour = batch)) + 
+    geom_point() +
+    theme_linedraw() +
+    xlab('AUC values') + 
+    ylab('log(cpm)') +
+    ggtitle(label=gene)
+  print(plot)
+}
+```
+
+#### Doxrubicin
+
+Design matrix used for analysis:
+
+```{r}
+counts <- y
+auc <- as.numeric(metadata_continuous$Doxorubicin)
+auc_design <- cbind(design,auc)
+create_dt(auc_design)
+```
+
+Top genes related to Doxrubicin AUC: 
+
+```{r}
+counts <- counts %>%
+  estimateDisp() %>%
+  estimateCommonDisp() %>%
+  estimateTagwiseDisp()
+
+fit <- glmQLFit(counts, design = auc_design, robust = TRUE)
+auc_fit <- glmQLFTest(fit, coef=c('auc'))
+genes <- topTags(auc_fit, n=Inf)
+create_dt(as.data.frame(genes))
+```
+*Notes: 0 genes found to have FDR < 0.05*
+
+Plotting top genes: 
+
+```{r}
+top_genes <- c(genes$table$genes)
+top_genes <- top_genes[1:5]
+auc_values <- auc
+
+for (gene in top_genes) {
+  gene <- as.character(gene)
+  y$cpm <- cpm(y, log = T) 
+  expression_values <- y$cpm[y$genes$genes==gene,]
+  plot<- ggplot(data = NULL, mapping = aes(x=auc, y=expression_values, colour = batch)) + 
+    geom_point() +
+    theme_linedraw() +
+    xlab('AUC values') + 
+    ylab('log(cpm)') +
+    ggtitle(label=gene)
+  print(plot)
+}
+```
+
+#### Gemcitabine
+
+Design matrix used for analysis:
+
+```{r}
+counts <- y
+auc <- as.numeric(metadata_continuous$Gemcitabine)
+auc_design <- cbind(design,auc)
+create_dt(auc_design)
+```
+
+Top genes related to Gemcitabine AUC: 
+
+```{r}
+counts <- counts %>%
+  estimateDisp() %>%
+  estimateCommonDisp() %>%
+  estimateTagwiseDisp()
+
+fit <- glmQLFit(counts, design = auc_design, robust = TRUE)
+auc_fit <- glmQLFTest(fit, coef=c('auc'))
+genes <- topTags(auc_fit, n=Inf)
+create_dt(as.data.frame(genes))
+```
+*Notes: 0 genes found to have FDR < 0.05*
+
+Plotting top genes: 
+
+```{r}
+top_genes <- c(genes$table$genes)
+top_genes <- top_genes[1:5]
+auc_values <- auc
+
+for (gene in top_genes) {
+  gene <- as.character(gene)
+  y$cpm <- cpm(y, log = T) 
+  expression_values <- y$cpm[y$genes$genes==gene,]
+  plot<- ggplot(data = NULL, mapping = aes(x=auc, y=expression_values, colour = batch)) + 
+    geom_point() +
+    theme_linedraw() +
+    xlab('AUC values') + 
+    ylab('log(cpm)') +
+    ggtitle(label=gene)
+  print(plot)
+}
+```
+
+#### Irinotecan
+
+Design matrix used for analysis:
+
+```{r}
+counts <- y
+auc <- as.numeric(metadata_continuous$Irinotecan)
+auc_design <- cbind(design,auc)
+create_dt(auc_design)
+```
+
+Top genes related to Irinotecan AUC: 
+
+```{r}
+counts <- counts %>%
+  estimateDisp() %>%
+  estimateCommonDisp() %>%
+  estimateTagwiseDisp()
+
+fit <- glmQLFit(counts, design = auc_design, robust = TRUE)
+auc_fit <- glmQLFTest(fit, coef=c('auc'))
+genes <- topTags(auc_fit, n=Inf)
+create_dt(as.data.frame(genes))
+```
+*Notes: 0 genes found to have FDR < 0.05*
+
+Plotting top genes: 
+
+```{r}
+top_genes <- c(genes$table$genes)
+top_genes <- top_genes[1:5]
+auc_values <- auc
+
+for (gene in top_genes) {
+  gene <- as.character(gene)
+  y$cpm <- cpm(y, log = T) 
+  expression_values <- y$cpm[y$genes$genes==gene,]
+  plot<- ggplot(data = NULL, mapping = aes(x=auc, y=expression_values, colour = batch)) + 
+    geom_point() +
+    theme_linedraw() +
+    xlab('AUC values') + 
+    ylab('log(cpm)') +
+    ggtitle(label=gene)
+  print(plot)
+}
+```
+
+#### Mitomycin
+
+Design matrix used for analysis:
+
+```{r}
+counts <- y
+auc <- as.numeric(metadata_continuous$Mitomycin)
+auc_design <- cbind(design,auc)
+create_dt(auc_design)
+```
+
+Top genes related to Mitomycin AUC: 
+
+```{r}
+counts <- counts %>%
+  estimateDisp() %>%
+  estimateCommonDisp() %>%
+  estimateTagwiseDisp()
+
+fit <- glmQLFit(counts, design = auc_design, robust = TRUE)
+auc_fit <- glmQLFTest(fit, coef=c('auc'))
+genes <- topTags(auc_fit, n=Inf)
+create_dt(as.data.frame(genes))
+```
+*Notes: 5 genes found to have FDR < 0.05*
+
+Plotting top genes: 
+
+```{r}
+top_genes <- c(genes$table$genes)
+top_genes <- top_genes[1:5]
+auc_values <- auc
+
+for (gene in top_genes) {
+  gene <- as.character(gene)
+  y$cpm <- cpm(y, log = T) 
+  expression_values <- y$cpm[y$genes$genes==gene,]
+  plot<- ggplot(data = NULL, mapping = aes(x=auc, y=expression_values, colour = batch)) + 
+    geom_point() +
+    theme_linedraw() +
+    xlab('AUC values') + 
+    ylab('log(cpm)') +
+    ggtitle(label=gene)
+  print(plot)
+}
+```
+
+#### Paclitaxel
+
+Design matrix used for analysis:
+
+```{r}
+counts <- y
+auc <- as.numeric(metadata_continuous$Paclitaxel)
+auc_design <- cbind(design,auc)
+create_dt(auc_design)
+```
+
+Top genes related to Paclitaxel AUC: 
+
+```{r}
+counts <- counts %>%
+  estimateDisp() %>%
+  estimateCommonDisp() %>%
+  estimateTagwiseDisp()
+
+fit <- glmQLFit(counts, design = auc_design, robust = TRUE)
+auc_fit <- glmQLFTest(fit, coef=c('auc'))
+genes <- topTags(auc_fit, n=Inf)
+create_dt(as.data.frame(genes))
+```
+*Notes: 0 genes found to have FDR < 0.05*
+
+Plotting top genes: 
+
+```{r}
+top_genes <- c(genes$table$genes)
+top_genes <- top_genes[1:5]
+auc_values <- auc
+
+for (gene in top_genes) {
+  gene <- as.character(gene)
+  y$cpm <- cpm(y, log = T) 
+  expression_values <- y$cpm[y$genes$genes==gene,]
+  plot<- ggplot(data = NULL, mapping = aes(x=auc, y=expression_values, colour = batch)) + 
+    geom_point() +
+    theme_linedraw() +
+    xlab('AUC values') + 
+    ylab('log(cpm)') +
+    ggtitle(label=gene)
+  print(plot)
+}
+```
+
+#### Topotecan
+
+Design matrix used for analysis:
+
+```{r}
+counts <- y
+auc <- as.numeric(metadata_continuous$Topotecan)
+auc_design <- cbind(design,auc)
+create_dt(auc_design)
+```
+
+Top genes related to Topotecan AUC: 
+
+```{r}
+counts <- counts %>%
+  estimateDisp() %>%
+  estimateCommonDisp() %>%
+  estimateTagwiseDisp()
+
+fit <- glmQLFit(counts, design = auc_design, robust = TRUE)
+auc_fit <- glmQLFTest(fit, coef=c('auc'))
+genes <- topTags(auc_fit, n=Inf)
+create_dt(as.data.frame(genes))
+```
+*Notes: 0 genes found to have FDR < 0.05*
+
+Plotting top genes: 
+
+```{r}
+top_genes <- c(genes$table$genes)
+top_genes <- top_genes[1:5]
+auc_values <- auc
+
+for (gene in top_genes) {
+  gene <- as.character(gene)
+  y$cpm <- cpm(y, log = T) 
+  expression_values <- y$cpm[y$genes$genes==gene,]
+  plot<- ggplot(data = NULL, mapping = aes(x=auc, y=expression_values, colour = batch)) + 
+    geom_point() +
+    theme_linedraw() +
+    xlab('AUC values') + 
+    ylab('log(cpm)') +
+    ggtitle(label=gene)
+  print(plot)
+}
+```
+
+## Method 2A: Differential Expression by Drug 
+
+```{r}
+rawdata <- read.delim2('/Volumes/bioinf/home/ndalvi/RNAseq_STAR/Results/HTseq/collated_counts.tsv', header = TRUE, check.names = FALSE, stringsAsFactors = FALSE)
+subset <- c('ENSEMBL_GeneID','ORG-38-ORG','ORG41','ORG-46-ORG','ORG49','ORG55','ORG60','ORG61','ORG64_new','ORG65','ORG66','ORG70','ORG73')
+```
+
+*Note: We have removed ORG76 from the AUC metadata as there is no corresponding RNAseq, and for organoids with AUC data for 1 dose AND 2 dose experimental methods, we keep data only from the 1 dose regimen for a more balanced dataset.*
+
+### QC and Normalisation
+
+#### Design 
+Taking a look at the design matrix which includes growth pattern, batch of sequencing, drug sensitivity classification, and dose:
+
+```{r}
+### creating a DGElist object to include organoids with AUC data
+organoids <- c('ORG-38-ORG','ORG41','ORG-46-ORG','ORG49','ORG55','ORG60','ORG61','ORG64_new','ORG65','ORG66','ORG70','ORG73')
+y<- DGEList(counts=rawdata[,organoids], genes=rawdata[,1])
+
+### tidying up sample names
+colnames(y) <- c('ORG38-O','ORG41','ORG46-O','ORG49','ORG55','ORG60','ORG61','ORG64','ORG65','ORG66','ORG70','ORG73')
+
+### tidying up metadata sample names to match counts matrix]
+metadata_discrete$PATIENT <- c('ORG38-O','ORG41','ORG46-O','ORG49','ORG55','ORG60','ORG61','ORG64','ORG65','ORG66','ORG70','ORG73')
+rownames(metadata_discrete) <- metadata_discrete$PATIENT
+
+### creating factors to add into design matrix
+### including pattern and batch
+pattern <- as.factor(metadata_discrete$PATTERN)
+batch <- as.factor(metadata_discrete$BATCH)
+dose <- as.factor(metadata_discrete$DOSE)
+response <- as.factor(metadata_discrete$Mitomycin)
+
+#create design matrix to include batch, growth pattern
+design <- model.matrix(~0+response+pattern+batch+dose)
+rownames(design) <- metadata_discrete$PATIENT
+create_dt(design)
+```
+
+#### Normalisation
+
+Filtering to remove genes with low counts:
+
+```{r, fig.width=7}
+#filtering to remove low counts
+keep <- filterByExpr(y, design)
+print(table(keep))
+y <- y[keep, , keep.lib.sizes=TRUE]
+
+#Visualiszing library sizes pre and post normalisation
+col <- brewer.pal(32, 'Paired')
+
+par(mfrow=c(1,2))
+lcpm <- cpm(y, log=TRUE)
+boxplot(lcpm, las=2, col=col, main="")
+title(main="A. Example: Unnormalised data",ylab="Log-cpm")
+
+y <- calcNormFactors(y) 
+lcpm <- cpm(y, log=TRUE)
+boxplot(lcpm, las=2, col=col, main="")
+title(main="B. Example: Normalised data",ylab="Log-cpm")
+```
+
+### Differential Expression 
 
 To ensure adequate power, we require at least 3 samples in each group for comparison (i.e n=3 resistant, and n=3 sensitive). This requirement is only satisfied for Mitomycin: 
 
 ```{r}
-table(metadata$Mitomycin)
+table(metadata_discrete$Mitomycin)
 ```
 
 Hence, we can look at the difference in expression between organoids resistant to mitomycin and those sensitive to mitomycin, while accounting for dose, sequencing batch, and growth pattern: 
@@ -205,3 +626,99 @@ create_dt(DEgenes$table)
 
 ```
 
+
+## Method 2B: Differential Expression by Drug Class
+
+```{r}
+rawdata <- read.delim2('/Volumes/bioinf/home/ndalvi/RNAseq_STAR/Results/HTseq/collated_counts.tsv', header = TRUE, check.names = FALSE, stringsAsFactors = FALSE)
+subset <- c('ENSEMBL_GeneID','ORG-38-ORG','ORG41','ORG-46-ORG','ORG49','ORG55','ORG60','ORG61','ORG64_new','ORG65','ORG66','ORG70','ORG73')
+metadata_discrete <- read_excel("/Users/dalvinikita/Documents/7_GitHub/drug-AUC-analysis/data/AUC_metadata_JAN2026.xlsx", sheet = 'discrete')
+metadata_discrete <- metadata_discrete[-c(5,14,15),]
+```
+
+*Note: We have removed ORG76 from the AUC metadata as there is no corresponding RNAseq, and for organoids with AUC data for 1 dose AND 2 dose experimental methods, we keep data only from the 1 dose regimen for a more balanced dataset.*
+
+### QC and Normalisation
+
+#### Design 
+
+Taking a look at the design matrix which includes growth pattern, dose, drug class response, and batch of sequencing:
+
+```{r}
+### creating a DGElist object to include organoids with AUC data
+organoids <- c('ORG-38-ORG','ORG41','ORG-46-ORG','ORG49','ORG55','ORG60','ORG61','ORG64_new','ORG65','ORG66','ORG70','ORG73')
+y<- DGEList(counts=rawdata[,organoids], genes=rawdata[,1])
+
+### tidying up sample names
+colnames(y) <- c('ORG38-O','ORG41','ORG46-O','ORG49','ORG55','ORG60','ORG61','ORG64','ORG65','ORG66','ORG70','ORG73')
+
+### tidying up metadata sample names to match counts matrix]
+metadata_discrete$PATIENT <- c('ORG38-O','ORG41','ORG46-O','ORG49','ORG55','ORG60','ORG61','ORG64','ORG65','ORG66','ORG70','ORG73')
+rownames(metadata_discrete) <- metadata_discrete$PATIENT
+
+### creating factors to add into design matrix
+### including pattern and batch
+pattern <- as.factor(metadata_discrete$PATTERN)
+batch <- as.factor(metadata_discrete$BATCH)
+dose <- as.factor(metadata_discrete$DOSE)
+response <- as.factor(metadata_discrete$Cytotoxic_Antibiotics)
+
+#create design matrix to include batch, growth pattern
+design <- model.matrix(~0+response+pattern+batch+dose)
+rownames(design) <- metadata_discrete$PATIENT
+create_dt(design)
+```
+
+#### Normalisation
+Filtering to remove genes with low counts:
+```{r, fig.width=7}
+#filtering to remove low counts
+keep <- filterByExpr(y, design)
+print(table(keep))
+y <- y[keep, , keep.lib.sizes=TRUE]
+
+#Visualiszing library sizes pre and post normalisation
+col <- brewer.pal(32, 'Paired')
+
+par(mfrow=c(1,2))
+lcpm <- cpm(y, log=TRUE)
+boxplot(lcpm, las=2, col=col, main="")
+title(main="A. Example: Unnormalised data",ylab="Log-cpm")
+
+y <- calcNormFactors(y) 
+lcpm <- cpm(y, log=TRUE)
+boxplot(lcpm, las=2, col=col, main="")
+title(main="B. Example: Normalised data",ylab="Log-cpm")
+```
+
+### Differential Expression 
+
+To ensure adequate power, we require at least 3 samples in each group for comparison (i.e n=3 resistant, and n=3 sensitive). This requirement is only satisfied for the Cytotixic Antibiotics drug class: 
+
+```{r}
+table(metadata_discrete$Cytotoxic_Antibiotics)
+```
+
+Hence, we can look at the difference in expression between organoids resistant to mitomycin and those sensitive to mitomycin, while accounting for dose, sequencing batch, and growth pattern: 
+
+```{r}
+create_dt(design)
+
+### fit data to GLM
+fit <- glmQLFit(y, design, robust=TRUE)
+
+### create contrast
+resVSsens <- makeContrasts(responseResistant - responseSensitive, levels = colnames(design))
+res <- glmQLFTest(fit, contrast=resVSsens)
+DEgenes <- topTags(res, n=Inf)
+create_dt(DEgenes$table)
+
+```
+
+Three DE genes with FDR < 0.05: 
+
+• SAA1
+
+• TFF1
+
+• TSHZ2
